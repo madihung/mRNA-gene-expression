@@ -1,0 +1,147 @@
+---
+title: "Finding a relationship bewteen mRNA and Protein Expression"
+output: html_document
+---
+## Preparing Data:
+
+### 1) Load Data
+```{r}
+geneUN <- read.csv("https://raw.githubusercontent.com/gcohenfr/Neonatal-Vaccination/main/data/geneUN.csv?token=AMFFFE75VWA2N4KGLN6HGOLAWFKRM")
+proteinUN <- read.csv("https://raw.githubusercontent.com/gcohenfr/Neonatal-Vaccination/main/data/proteinUN.csv?token=AMFFFE7LAEM3CRZTDJO6PJLAWFKVU")
+```
+
+
+### 2) Replace NA values
+https://statisticsglobe.com/replace-missing-values-by-column-mean-in-r
+```{r, warning=FALSE, message=FALSE}
+for(i in 1:ncol(geneUN)) {   
+  geneUN[ , i][is.na(geneUN[ , i])] <- median(geneUN[ , i], na.rm = TRUE)
+}
+
+for(i in 1:ncol(proteinUN)) {   
+  proteinUN[ , i][is.na(proteinUN[ , i])] <- median(proteinUN[ , i], na.rm = TRUE)
+}
+```
+
+
+### 3) Logarithmic Scale for proteinUN
+```{r}
+proteinUN.log <- proteinUN
+for(i in 2:ncol(proteinUN.log)) {  
+ proteinUN.log[ ,i] <- log2(proteinUN.log[ ,i] + 0.0000000001)
+}
+```
+
+
+### 4) Viewing expression levels on plot
+
+
+__Gene expression levels:__
+
+```{r echo=FALSE}
+plot(geneUN[,i],ylab="gene expression level",type="l",xlab="tissue type index",ylim=c(0,0.02))
+```
+
+__Protein expression levels:__
+
+```{r echo=FALSE}
+plot(proteinUN[,i],ylab="protein expression level",type="l",xlab="tissue type index",ylim=c(0,0.08))
+```
+
+__Log scaled protein expression levels:__
+
+```{r echo=FALSE}
+plot(proteinUN.log[,i],ylab="log2(protein expression level)",type="l",xlab="tissue type index",ylim=c(-30,0.08))
+```
+
+## Merging Data
+
+### 1) Rename column names 
+
+https://stackoverflow.com/questions/44064983/whats-the-best-way-to-add-a-specific-string-to-all-column-names-in-a-dataframe/44065175
+https://statisticsglobe.com/rename-column-name-in-r-data-frame/
+
+```{r include=FALSE}
+library(data.table)
+setnames(geneUN,paste(colnames(geneUN), sep="", "_ge"))
+print(geneUN)
+#need to rename just column X_ge -> X
+colnames(geneUN)[colnames(geneUN) == "X_ge"] <- "X"
+# renaming column names for proteinUN.log
+setnames(proteinUN.log,paste(colnames(proteinUN.log), sep="", "_pe"))
+colnames(proteinUN.log)[colnames(proteinUN.log) == "X_pe"] <- "X"
+print(proteinUN.log)
+```
+
+
+### 2) Join dataframes
+```{r include=FALSE}
+library(dplyr)
+mergedData <- full_join(proteinUN.log, geneUN.log, by = intersect(colnames(geneUN.log), colnames(proteinUN.log)))
+```
+
+```{r echo=FALSE}
+head(mergedData)
+```
+
+
+## Analyzing Relationship between variables
+http://mason.gmu.edu/~afinn/html/teaching/courses/f03_comm250/fbk_chapters/14.pdf
+https://www.datacamp.com/community/tutorials/linear-regression-R#what
+
+### Using Linear Regression Model
+
+```{r include=FALSE}
+library(ggplot2)
+lmExpression = lm(uterus_pe~uterus_ge, data = mergedData)   #create linear regression
+summary(lmExpression) #review results
+```
+
+__Uterus tissue:__
+
+```{r, echo=FALSE, message=FALSE}
+  ggplot(data=mergedData,aes(uterus_ge, uterus_pe)) +
+  coord_cartesian(xlim = c(0, 0.002)) + 
+  coord_cartesian(ylim = c(-25, 0)) +
+  geom_point() +
+  geom_smooth(method='lm')  #Add a regression line
+```
+
+__Kidney tissue__
+
+```{r, echo=FALSE, message=FALSE}
+  ggplot(data=mergedData,aes(kidney_ge, kidney_pe)) +
+  coord_cartesian(xlim = c(0, 0.005)) + 
+  coord_cartesian(ylim = c(-25, 0)) + 
+  geom_point() + 
+  geom_smooth(method='lm')  #Add a regression line
+  kidney_model <- lm(kidney_ge~kidney_pe, data = mergedData)
+  summary(kidney_model)
+```
+
+
+### Finding Correlation Coefficients
+
+__Pearson Coefficients:__
+* assumes normal distribution
+```{r, echo=FALSE, message=FALSE}
+library(corrplot)
+mergedData.pcor <- cor(mergedData[sapply(mergedData,is.numeric)], method = c("pearson"))
+corrplot(mergedData.pcor, method = "square")
+```
+
+__Spearman Coefficients:__
+* assumes monotonic relationship
+* does not assume normal distribution
+```{r, echo=FALSE}
+mergedData.scor <- cor(mergedData[sapply(mergedData,is.numeric)], method = c("spearman"))
+corrplot(mergedData.scor, method = "square")
+```
+
+```{r, echo=FALSE}
+cor.test(mergedData$uterus_ge, mergedData$uterus_pe,  method = "spearman", exact = FALSE) 
+cor.test(mergedData$kidney_ge, mergedData$kidney_pe,  method = "spearman", exact = FALSE) 
+```
+
+rho > 0 -> positive correlation
+
